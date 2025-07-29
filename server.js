@@ -5,6 +5,7 @@ require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
+const memoryData = { clients: [], quotes: [], invoices: [] };
 
 // Middleware
 app.use(cors());
