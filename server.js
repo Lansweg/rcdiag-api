@@ -114,22 +114,45 @@ if (process.env.MONGODB_URI) {
 }
 
 // Fonctions de données hybrides
+// 🔧 FONCTION loadData CORRIGÉE (remplacez dans votre server.js)
+
 const loadData = async () => {
-  // Essayer MongoDB d'abord (avec timeout rapide)
+  // Essayer MongoDB d'abord (avec timeout correct)
   if (mongoConnected && Client) {
     try {
       console.log("📥 Tentative chargement MongoDB...");
       
-      const clientsPromise = Client.find().maxTimeMS(3000);
-      const quotesPromise = Quote.find().maxTimeMS(3000);
-      const invoicesPromise = Invoice.find().maxTimeMS(3000);
+      // Utilisation de Promise.race pour le timeout
+      const clientsPromise = Promise.race([
+        Client.find().lean(),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 3000))
+      ]);
+      
+      const quotesPromise = Promise.race([
+        Quote.find().lean(),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 3000))
+      ]);
+      
+      const invoicesPromise = Promise.race([
+        Invoice.find().lean(),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 3000))
+      ]);
       
       const [clients, quotes, invoices] = await Promise.all([
         clientsPromise, quotesPromise, invoicesPromise
       ]);
       
-      console.log("✅ Données chargées depuis MongoDB");
-      return { clients, quotes, invoices };
+      console.log("✅ Données chargées depuis MongoDB:", {
+        clients: clients.length,
+        quotes: quotes.length,
+        invoices: invoices.length
+      });
+      
+      return { 
+        clients: clients || [], 
+        quotes: quotes || [], 
+        invoices: invoices || [] 
+      };
       
     } catch (mongoError) {
       console.log("⚠️ MongoDB timeout, utilisation fichier local");
@@ -141,13 +164,22 @@ const loadData = async () => {
     initializeDataFile();
     const rawData = fs.readFileSync(DATA_FILE, 'utf8');
     const data = JSON.parse(rawData);
-    console.log("📁 Données chargées depuis fichier local");
-    return data;
+    console.log("📁 Données chargées depuis fichier local:", {
+      clients: data.clients?.length || 0,
+      quotes: data.quotes?.length || 0,
+      invoices: data.invoices?.length || 0
+    });
+    return {
+      clients: data.clients || [],
+      quotes: data.quotes || [],
+      invoices: data.invoices || []
+    };
   } catch (fileError) {
     console.log("📁 Fichier local non trouvé, données vides");
     return { clients: [], quotes: [], invoices: [] };
   }
 };
+
 
 const saveData = async (data) => {
   const results = { file: false, mongo: false };
@@ -164,24 +196,57 @@ const saveData = async (data) => {
   // Sauvegarder dans MongoDB (si disponible)
   if (mongoConnected && Client) {
     try {
-      await Client.deleteMany({}).maxTimeMS(3000);
-      await Quote.deleteMany({}).maxTimeMS(3000);
-      await Invoice.deleteMany({}).maxTimeMS(3000);
+      console.log("🔄 Nettoyage MongoDB...");
       
+      // Suppression avec timeout correct
+      await Promise.race([
+        Client.deleteMany({}),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 3000))
+      ]);
+      
+      await Promise.race([
+        Quote.deleteMany({}),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 3000))
+      ]);
+      
+      await Promise.race([
+        Invoice.deleteMany({}),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 3000))
+      ]);
+      
+      console.log("🔄 Insertion des nouvelles données...");
+      
+      // Insertion avec timeout correct
       if (data.clients.length > 0) {
-        await Client.insertMany(data.clients).maxTimeMS(3000);
+        await Promise.race([
+          Client.insertMany(data.clients),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 3000))
+        ]);
+        console.log(`✅ ${data.clients.length} clients insérés`);
       }
+      
       if (data.quotes.length > 0) {
-        await Quote.insertMany(data.quotes).maxTimeMS(3000);
+        await Promise.race([
+          Quote.insertMany(data.quotes),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 3000))
+        ]);
+        console.log(`✅ ${data.quotes.length} devis insérés`);
       }
+      
       if (data.invoices.length > 0) {
-        await Invoice.insertMany(data.invoices).maxTimeMS(3000);
+        await Promise.race([
+          Invoice.insertMany(data.invoices),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 3000))
+        ]);
+        console.log(`✅ ${data.invoices.length} factures insérées`);
       }
       
       results.mongo = true;
-      console.log("💾 Sauvegardé dans MongoDB");
+      console.log("💾 Sauvegarde MongoDB complète");
+      
     } catch (mongoError) {
       console.log("⚠️ Erreur sauvegarde MongoDB:", mongoError.message);
+      // Pas grave, on a le fichier local
     }
   }
   
